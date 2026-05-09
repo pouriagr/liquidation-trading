@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from data.models import Candle, OpenInterest
+from data.models import Candle, FundingRate, OpenInterest
 
 
 @admin.register(Candle)
@@ -27,3 +27,12 @@ class OpenInterestAdmin(admin.ModelAdmin):
     search_fields = ("symbol",)
     date_hierarchy = "timestamp"
     ordering = ("-timestamp",)
+
+
+@admin.register(FundingRate)
+class FundingRateAdmin(admin.ModelAdmin):
+    list_display = ("symbol", "funding_time", "funding_rate", "mark_price")
+    list_filter = ("symbol",)
+    search_fields = ("symbol",)
+    date_hierarchy = "funding_time"
+    ordering = ("-funding_time",)
