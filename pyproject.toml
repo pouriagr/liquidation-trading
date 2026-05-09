@@ -14,6 +14,7 @@ python = "^3.12"
 django = "^5.2"
 psycopg = { version = "^3.2", extras = ["binary"] }
 redis = "^5.0"
+requests = "^2.33.1"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.6.0"
