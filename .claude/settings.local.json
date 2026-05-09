@@ -8,7 +8,11 @@
       "Bash(ls *)",
       "Bash(find F:\\\\\\\\myWorks\\\\\\\\python\\\\\\\\liquidation-trading\\\\\\\\data\\\\\\\\models *)",
       "Bash(Get-ChildItem -Recurse -Name \"*.py\")",
-      "Bash(Select-String -Pattern \"open.?interest|openInterestHist|OI\" -ErrorAction SilentlyContinue)"
+      "Bash(Select-String -Pattern \"open.?interest|openInterestHist|OI\" -ErrorAction SilentlyContinue)",
+      "WebFetch(domain:data.binance.vision)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:medium.com)"
     ]
   }
 }
