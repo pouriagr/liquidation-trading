@@ -6,7 +6,9 @@
       "Bash(find \"F:\\\\\\\\myWorks\\\\\\\\python\\\\\\\\liquidation-trading\" -maxdepth 2 -type f -name \"*.py\")",
       "Bash(find F:\\\\\\\\myWorks\\\\\\\\python\\\\\\\\liquidation-trading *)",
       "Bash(ls *)",
-      "Bash(find F:\\\\\\\\myWorks\\\\\\\\python\\\\\\\\liquidation-trading\\\\\\\\data\\\\\\\\models *)"
+      "Bash(find F:\\\\\\\\myWorks\\\\\\\\python\\\\\\\\liquidation-trading\\\\\\\\data\\\\\\\\models *)",
+      "Bash(Get-ChildItem -Recurse -Name \"*.py\")",
+      "Bash(Select-String -Pattern \"open.?interest|openInterestHist|OI\" -ErrorAction SilentlyContinue)"
     ]
   }
 }

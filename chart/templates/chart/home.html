@@ -40,9 +40,11 @@
         </aside>
     </div>
 
-    {# Custom right-click context menu for the chart. Top-level so it isn't
-       clipped or absorbed by the chart's loading overlay or any future
-       chart-wrapper transforms. Hidden until home.js opens it. #}
+    {% comment %}
+    Custom right-click context menu for the chart. Top-level so it isn't
+    clipped or absorbed by the chart's loading overlay or any future
+    chart-wrapper transforms. Hidden until home.js opens it.
+    {% endcomment %}
     <div id="chart-context-menu" class="context-menu" role="menu" aria-hidden="true">
         <button type="button" class="menu-item" data-action="reset-view" role="menuitem">
             Reset chart view
