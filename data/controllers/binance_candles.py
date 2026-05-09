@@ -50,7 +50,7 @@ class BinanceCandlesController:
         self,
         symbol: str = "BTCUSDT",
         interval: str = "15m",
-        limit: int = 500,
+        limit: int = 1500,
     ) -> FetchResult:
         """Fetch the most recent `limit` candles and upsert them.
 
@@ -78,13 +78,9 @@ class BinanceCandlesController:
         if normalized_symbol not in self.ALLOWED_SYMBOLS:
             raise ValueError(f"symbol must be one of {sorted(self.ALLOWED_SYMBOLS)}")
         if interval not in self.ALLOWED_INTERVALS:
-            raise ValueError(
-                f"interval must be one of {sorted(self.ALLOWED_INTERVALS)}"
-            )
+            raise ValueError(f"interval must be one of {sorted(self.ALLOWED_INTERVALS)}")
         if not (self.MIN_LIMIT <= limit <= self.MAX_LIMIT):
-            raise ValueError(
-                f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}"
-            )
+            raise ValueError(f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}")
         return normalized_symbol, interval, limit
 
     def _fetch(self, symbol: str, interval: str, limit: int) -> list[list]:

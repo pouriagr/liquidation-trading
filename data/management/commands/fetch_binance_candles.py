@@ -4,9 +4,12 @@ Logic-free wrapper — all real work lives in
 `data.controllers.binance_candles.BinanceCandlesController`. This command only
 parses argv and prints a one-line result.
 
+Default `--limit` is 1500 — Binance's hard cap on `/fapi/v1/klines`. Pass a
+smaller value if you only need a short tail.
+
 Usage:
     poetry run python manage.py fetch_binance_candles BTCUSDT \
-        --interval 15m --limit 500
+        --interval 15m --limit 1500
 """
 
 from django.core.management.base import BaseCommand
@@ -20,7 +23,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("symbol", nargs="?", default="BTCUSDT")
         parser.add_argument("--interval", default="15m")
-        parser.add_argument("--limit", type=int, default=500)
+        parser.add_argument("--limit", type=int, default=1500)
 
     def handle(self, *args, **opts):
         result = binance_candles_controller.fetch_and_store(
@@ -35,4 +38,4 @@ class Command(BaseCommand):
         )
 
 
-# poetry run python manage.py fetch_binance_candles BTCUSDT --interval 15m --limit 500
+# poetry run python manage.py fetch_binance_candles BTCUSDT --interval 15m --limit 1500

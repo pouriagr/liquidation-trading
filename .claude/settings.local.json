@@ -12,7 +12,13 @@
       "WebFetch(domain:data.binance.vision)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:medium.com)"
+      "WebFetch(domain:medium.com)",
+      "Bash(Get-ChildItem -Path \"F:\\\\myWorks\\\\python\\\\liquidation-trading\\\\data\\\\controllers\" -Force)",
+      "Bash(Select-Object Name, FullName)",
+      "Bash(Get-ChildItem -Recurse -Filter \"*test*\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(poetry run *)",
+      "PowerShell(git *)"
     ]
   }
 }
