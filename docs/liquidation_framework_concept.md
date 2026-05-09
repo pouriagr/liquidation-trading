@@ -577,7 +577,7 @@ The Binance Futures API provides:
 - Real-time aggregated trades with the aggressor flag (essential for CVD)
 - Real-time liquidation feed via WebSocket (current only; not historical)
 
-For most needs, the Binance API alone is sufficient. The single significant gap is historical OI beyond 30 days.
+For live signal generation, the Binance API alone is sufficient. For extended historical analysis, the API's `openInterestHist` endpoint is limited to thirty days; longer histories come from the public archive described below.
 
 ### 11.2 Binance Public Data Archive
 
@@ -590,18 +590,22 @@ The archive includes:
 - Mark price klines, premium index klines, and metrics
 - Order book ticker snapshots
 
-For backtesting, this archive enables computing historical CVD over years of data without operating a live collector. The single absence is open interest history, which the public archive does not include.
+The metrics files in particular appear to contain Open Interest history along with several long/short ratio fields, at five-minute resolution, going back substantially further than the API's thirty-day window. The fields reported in metrics files include `sum_open_interest`, `sum_open_interest_value`, `count_toptrader_long_short_ratio`, `sum_toptrader_long_short_ratio`, `count_long_short_ratio`, and `sum_taker_long_short_vol_ratio`. URL pattern: `https://data.binance.vision/data/futures/um/daily/metrics/{SYMBOL}/{SYMBOL}-metrics-{YYYY-MM-DD}.zip`.
+
+A note of caution: this characterization of the metrics archive is based on summary information rather than direct verification at the time of writing. Practitioners should download a sample file and verify the exact field structure, resolution, and historical coverage for the symbols they intend to analyze before designing their data pipeline around it. If the metrics archive does provide what is described, it largely eliminates the historical OI gap that previously required a paid third-party source.
+
+For backtesting, this archive — including the metrics files if they hold the described content — enables computing historical CVD, OI, and long/short positioning over years of data without operating a live collector and without paid subscriptions.
 
 ### 11.3 Third-Party Aggregators
 
-For data not available from Binance directly:
+For data not available from Binance directly, or where cross-exchange aggregation is needed:
 
-- **Coinalyze** offers historical OI across many exchanges and aggregated cross-exchange metrics. The most cost-effective option for extended OI history.
-- **Coinglass** provides estimated liquidation heatmap data, historical heatmap snapshots, and a more complete liquidation history.
+- **Coinalyze** offers historical OI and funding aggregated across many exchanges. Useful primarily for cross-exchange analysis rather than single-exchange OI history, since the latter appears available free from Binance Public Data.
+- **Coinglass** provides estimated liquidation heatmap data, historical heatmap snapshots, and a more complete liquidation history than Binance's throttled public feed.
 - **Hyblock Capital** provides institutional-grade analytics including their own cluster estimation models.
 - **Tardis.dev** provides high-resolution institutional data including full order book reconstruction at high cost.
 
-For an individual trader applying the framework, Coinalyze plus the Binance public data covers essentially all needs. The more expensive providers offer advantages primarily for systems that will be operated at scale.
+For an individual trader applying the framework, Binance API plus Binance Public Data covers most needs at zero cost. Paid sources become valuable specifically for cross-exchange analysis, historical liquidation cascades, and order book reconstruction — not for basic single-exchange OI history.
 
 ### 11.4 Data Decision Matrix
 
@@ -610,13 +614,15 @@ For an individual trader applying the framework, Coinalyze plus the Binance publ
 | Price/OHLCV | Binance Public Data | Free | ~5 years |
 | Aggregated trades / CVD computation | Binance Public Data | Free | ~5 years |
 | Funding rate | Binance API | Free | Full history |
-| Open interest (recent) | Binance API | Free | 30 days |
-| Open interest (extended) | Coinalyze | ~$30/month | Multi-year |
-| Live liquidation feed | Binance WebSocket | Free | Real-time |
-| Historical liquidations | Coinglass | $30-100/month | Multi-year |
+| Open interest (recent, real-time) | Binance API | Free | 30 days at 5-min resolution |
+| Open interest (extended history) | Binance Public Data (metrics archive) | Free | Multi-year (subject to verification) |
+| Long/short ratios (extended history) | Binance Public Data (metrics archive) | Free | Multi-year (subject to verification) |
+| Open interest (cross-exchange) | Coinalyze | ~$30/month | Multi-year |
+| Live liquidation feed | Binance WebSocket | Free | Real-time only, throttled |
+| Historical liquidations (complete) | Coinglass | $30-100/month | Multi-year |
 | Heatmap snapshots | Coinglass | $30-100/month | Multi-year |
 
-A practitioner can apply the entire framework using only free sources for live signal generation, with the recognition that historical backtesting is constrained to the 30-day OI window unless a paid source is added.
+A practitioner can apply the entire framework using only free sources for both live signal generation and historical backtesting, provided the metrics archive holds the OI content described above. Paid sources remain useful for cross-exchange aggregation and complete liquidation history but are no longer mandatory for the foundational tier.
 
 ### 11.5 A Tiered Approach to Data Integration
 
@@ -744,7 +750,7 @@ Four-hour and higher timeframes drift away from the framework's design. Liquidat
 
 Thirty-minute candles are sometimes underappreciated and warrant explicit mention. The fee economics are slightly better than fifteen minutes (7% versus 11%), the noise filtering is naturally stronger, and the signals tend to be higher quality. The trade-off is sample size: thirty-minute resolution produces half the signal density of fifteen-minute. For practitioners with at least a year of historical data, thirty minutes is a reasonable alternative; for practitioners just beginning, fifteen minutes captures more information per unit of calendar time and is therefore preferable for the initial implementation.
 
-The recommendation, then, is to begin the systematic implementation at fifteen-minute resolution. Practitioners with substantial historical data already available — for example, those who have downloaded multi-year archives from Binance Public Data and supplemented them with extended OI history from Coinalyze — can validate fifteen-minute against thirty-minute resolution from the outset using the same backtest infrastructure. Practitioners without such historical data should run fifteen-minute resolution live for six months to a year, accumulate the necessary data, and then perform the comparison. In either case, the empirical timeframe optimization should be done after foundational performance is established, not before.
+The recommendation, then, is to begin the systematic implementation at fifteen-minute resolution. Practitioners with substantial historical data already available — for example, those who have downloaded multi-year archives from Binance Public Data including its metrics files — can validate fifteen-minute against thirty-minute resolution from the outset using the same backtest infrastructure. Practitioners without such historical data should run fifteen-minute resolution live for six months to a year, accumulate the necessary data, and then perform the comparison. In either case, the empirical timeframe optimization should be done after foundational performance is established, not before.
 
 ### 12.2 Data-Timeframe Alignment
 
