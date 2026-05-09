@@ -7,5 +7,6 @@ continue to work after splitting the module into a package.
 
 from data.models.candle import Candle
 from data.models.choices import Interval, Symbol
+from data.models.open_interest import OpenInterest
 
-__all__ = ["Candle", "Interval", "Symbol"]
+__all__ = ["Candle", "Interval", "OpenInterest", "Symbol"]
