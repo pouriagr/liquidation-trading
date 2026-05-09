@@ -1,0 +1,64 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Liquidation Chart</title>
+    <link rel="stylesheet" href="{% static 'chart/css/home.css' %}">
+    <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script defer src="{% static 'chart/js/home.js' %}"></script>
+</head>
+<body>
+    {# csrf_token sets the cookie that home.js reads for the POST refresh #}
+    <form style="display:none">{% csrf_token %}</form>
+
+    {# Layout: full-width top bar above, then chart + right sidebar side-by-side. #}
+    <header id="topbar">
+        <select id="interval" aria-label="Interval">
+            {% for value, label in intervals %}
+                <option value="{{ value }}"{% if value == initial_interval %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <button id="refresh" type="button">Refresh</button>
+        <span id="status" role="status"></span>
+    </header>
+
+    <div id="below">
+        <main id="chart"></main>
+
+        {% comment %}
+        Right-side favorites sidebar (TradingView style). Same data-symbol /
+        is-active contract as before so home.js click delegation still works.
+        {% endcomment %}
+        <aside id="symbols" class="sidebar" aria-label="Symbol">
+            {% for value, label in symbols %}
+                <button type="button"
+                        class="pill{% if value == initial_symbol %} is-active{% endif %}"
+                        data-symbol="{{ value }}">{{ label }}</button>
+            {% endfor %}
+        </aside>
+    </div>
+
+    {# Custom right-click context menu for the chart. Top-level so it isn't
+       clipped or absorbed by the chart's loading overlay or any future
+       chart-wrapper transforms. Hidden until home.js opens it. #}
+    <div id="chart-context-menu" class="context-menu" role="menu" aria-hidden="true">
+        <button type="button" class="menu-item" data-action="reset-view" role="menuitem">
+            Reset chart view
+        </button>
+    </div>
+
+    {# URL templates with placeholders that home.js substitutes per call. #}
+    <script>
+        window.CHART_INITIAL = {
+            symbol: "{{ initial_symbol }}",
+            interval: "{{ initial_interval }}"
+        };
+        window.CHART_URLS = {
+            candles: "{% url 'chart:candles' symbol='__SYM__' interval='__INT__' %}",
+            refresh: "{% url 'chart:refresh' symbol='__SYM__' interval='__INT__' %}"
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+/* Full-viewport TradingView-style layout: full-width top bar above, then a
+   flex row of chart + fixed-width right sidebar below — no page scroll.
+
+   Why the topbar spans the full width: it visually lines up with the
+   sidebar's top edge (TradingView style) instead of leaving an L-shaped step
+   where a column-only topbar would butt into the sidebar at y=48.
+
+   The two load-bearing fixes:
+     - #chart  { min-width: 0 }  — lets the chart shrink horizontally so
+                                   Lightweight Charts can resize without
+                                   pushing the sidebar off-screen.
+     - #chart  { min-height: 0 } — same idea vertically; without it the flex
+                                   child refuses to shrink and you get a page
+                                   scrollbar.
+     - #below  { min-height: 0 } — same fix one level up, so the row container
+                                   itself can fill the remaining height. */
+
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    background: #131722;
+    color: #d1d4dc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+}
+
+#below {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+}
+
+#topbar {
+    flex: 0 0 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-bottom: 1px solid #2a2e39;
+    background: #1e222d;
+}
+
+#interval {
+    appearance: none;
+    background: #131722;
+    color: #d1d4dc;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    padding: 6px 24px 6px 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+#refresh {
+    appearance: none;
+    background: #131722;
+    color: #d1d4dc;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+}
+
+#refresh:hover {
+    background: #2a2e39;
+}
+
+#refresh:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+#status {
+    margin-left: auto;
+    color: #787b86;
+    font-size: 12px;
+}
+
+#status.is-error {
+    color: #ef5350;
+}
+
+/* Chart pane — fills remaining space inside #below. The ::after pseudo
+   element is the dim overlay shown while a fetch is in flight. */
+#chart {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+}
+
+#chart::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(19, 23, 34, 0.55);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+}
+
+#chart.is-loading::after {
+    opacity: 1;
+}
+
+#chart.is-loading {
+    cursor: progress;
+}
+
+/* Right-side favorites sidebar */
+#symbols.sidebar {
+    flex: 0 0 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    border-left: 1px solid #2a2e39;
+    background: #1e222d;
+    overflow-y: auto;
+}
+
+.pill {
+    appearance: none;
+    background: transparent;
+    color: #b2b5be;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+}
+
+#symbols.sidebar .pill {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+}
+
+.pill:hover {
+    background: #2a2e39;
+    color: #d1d4dc;
+}
+
+.pill.is-active {
+    background: #2962ff;
+    color: #fff;
+    border-color: #2962ff;
+}
+
+/* Right-click context menu for the chart. Position is set inline by
+   home.js (showMenu); we just hide it here and style the open state. */
+.context-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    min-width: 180px;
+    padding: 4px 0;
+    background: #1e222d;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    z-index: 100;
+    display: none;
+}
+
+.context-menu.is-open {
+    display: block;
+}
+
+.context-menu .menu-item {
+    appearance: none;
+    display: block;
+    width: 100%;
+    padding: 6px 14px;
+    background: transparent;
+    color: #d1d4dc;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.context-menu .menu-item:hover {
+    background: #2a2e39;
+}
