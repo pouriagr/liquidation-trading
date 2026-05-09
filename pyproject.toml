@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "liquidation-trading"
+version = "0.1.0"
+description = "Django project for liquidation-based trading research and tooling."
+authors = ["Pouria"]
+readme = "README.md"
+packages = [
+    { include = "core" },
+    { include = "data" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+django = "^5.2"
+psycopg = { version = "^3.2", extras = ["binary"] }
+redis = "^5.0"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.6.0"
+black = "^26.3.1"
+ruff = "^0.15.12"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

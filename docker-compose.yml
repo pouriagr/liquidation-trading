@@ -1,0 +1,28 @@
+name: liquidation-trading
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: liquidation-trading-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: liquidation_trading
+      POSTGRES_USER: liquidation_trading
+      POSTGRES_PASSWORD: liquidation_trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: liquidation-trading-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  postgres-data:
+  redis-data:
