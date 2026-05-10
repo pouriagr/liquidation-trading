@@ -45,6 +45,12 @@ or just run:
 pre-commit
 ```
 
+## Create a superuser
+
+```bash
+poetry run python manage.py createsuperuser
+```
+
 ## Agent Guidance
 
 Agent-specific project guidance lives in [`AGENTS.md`](AGENTS.md). Keep this README
