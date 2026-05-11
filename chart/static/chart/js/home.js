@@ -88,6 +88,23 @@
                 borderColor: "#2a2e39",
                 timeVisible: true,
                 secondsVisible: false,
+                // Pin the visible range to the data on both ends.
+                // Without this, dragging past the first/last bar lets
+                // the chart "rubber-band" — the visible range silently
+                // narrows during the over-pull, which reads as an
+                // accidental zoom-in at the edge.
+                fixLeftEdge: true,
+                fixRightEdge: true,
+            },
+            // Zoom is wheel-only. Dragging on either axis (the default
+            // "press + move = zoom" gesture) is disabled so a pan never
+            // accidentally rescales the chart — only the mouse wheel
+            // (and pinch on touch devices) zooms. Drag inside the chart
+            // area still pans, via the default `handleScroll`.
+            handleScale: {
+                axisPressedMouseMove: { time: false, price: false },
+                mouseWheel: true,
+                pinch: true,
             },
         });
 
@@ -167,6 +184,191 @@
                 setStatus("Error: " + e.message, true);
             } finally {
                 if (myId === lastRequestId) setLoading(false);
+            }
+        }
+
+        // --- indicator sub-pane ------------------------------------------
+        // A second Lightweight Charts instance, lazily created on first
+        // selection. Its time axis is independent from the candle pane
+        // by design — per spec, the user wants to pan/zoom the indicator
+        // separately. We do NOT call any cross-chart sync helper.
+        const indicatorEl = document.getElementById("indicator-chart");
+        let indicatorChart = null;
+        let indicatorSeries = null;   // the active series instance, or null
+        let activeIndicator = "";     // "" | "oi:5m" | "oi:1h" | "funding" | "cvd:5m" | "cvd:15m"
+        // Monotonic id for indicator fetches — separate from the candle
+        // pane's `lastRequestId` so the two panes don't invalidate each
+        // other's in-flight requests.
+        let lastIndicatorId = 0;
+
+        function setIndicatorLoading(on) {
+            indicatorEl.classList.toggle("is-loading", !!on);
+        }
+
+        function showIndicatorPane() {
+            indicatorEl.classList.remove("is-hidden");
+            // The pane was display:none until now, so the chart was created
+            // (or last sized) against zero dimensions — re-apply explicit
+            // sizing once it has a real box.
+            if (indicatorChart) {
+                indicatorChart.applyOptions({
+                    width: indicatorEl.clientWidth,
+                    height: indicatorEl.clientHeight,
+                });
+            }
+        }
+
+        function hideIndicatorPane() {
+            indicatorEl.classList.add("is-hidden");
+        }
+
+        function ensureIndicatorChart() {
+            if (indicatorChart) return indicatorChart;
+            // Reveal the pane first so clientWidth/Height are non-zero at
+            // the moment createChart() snapshots them.
+            indicatorEl.classList.remove("is-hidden");
+            indicatorChart = LightweightCharts.createChart(indicatorEl, {
+                width: indicatorEl.clientWidth,
+                height: indicatorEl.clientHeight,
+                layout: {
+                    background: { type: "solid", color: "#131722" },
+                    textColor: "#d1d4dc",
+                },
+                grid: {
+                    vertLines: { color: "#1e222d" },
+                    horzLines: { color: "#1e222d" },
+                },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { borderColor: "#2a2e39" },
+                timeScale: {
+                    borderColor: "#2a2e39",
+                    timeVisible: true,
+                    secondsVisible: false,
+                    // Match the price chart: no edge over-pull, which
+                    // would otherwise pump narrowed ranges through the
+                    // time-sync link below and look like a zoom on the
+                    // other pane.
+                    fixLeftEdge: true,
+                    fixRightEdge: true,
+                },
+                // Match the price chart: wheel-only zoom, no axis-drag
+                // zoom. Otherwise the two panes would feel inconsistent
+                // and a drag here would re-trigger zoom syncing too.
+                handleScale: {
+                    axisPressedMouseMove: { time: false, price: false },
+                    mouseWheel: true,
+                    pinch: true,
+                },
+            });
+            new ResizeObserver(function () {
+                indicatorChart.applyOptions({
+                    width: indicatorEl.clientWidth,
+                    height: indicatorEl.clientHeight,
+                });
+            }).observe(indicatorEl);
+
+            // Link the two time scales so panning/zooming one drags the
+            // other along. Time-range (not logical-range) sync, because
+            // the two panes can have different bar counts (e.g. 15m
+            // candles vs hourly OI) and the user expects "same time
+            // window everywhere", not "same bar indices everywhere".
+            //
+            // The `syncingTime` guard breaks the feedback loop —
+            // without it, A's change fires B's listener, which sets B's
+            // range, which fires A's listener, which … ping-pong forever.
+            let syncingTime = false;
+            function linkTimeRange(from, to) {
+                from.timeScale().subscribeVisibleTimeRangeChange(function (range) {
+                    if (syncingTime || !range) return;
+                    syncingTime = true;
+                    try {
+                        to.timeScale().setVisibleRange(range);
+                    } finally {
+                        syncingTime = false;
+                    }
+                });
+            }
+            linkTimeRange(chart, indicatorChart);
+            linkTimeRange(indicatorChart, chart);
+
+            return indicatorChart;
+        }
+
+        function buildIndicatorUrl(kind, key) {
+            // `oi` and `cvd` both use the `__INT__` placeholder for their
+            // second segment (period / interval); `funding` has none.
+            const tmpl = window.CHART_URLS[kind];
+            let url = tmpl.replace("__SYM__", encodeURIComponent(current.symbol));
+            if (key !== undefined) {
+                url = url.replace("__INT__", encodeURIComponent(key));
+            }
+            return url;
+        }
+
+        function renderIndicator(kind, json) {
+            const c = ensureIndicatorChart();
+            // Strip any previous series before installing the new one —
+            // otherwise switching e.g. OI → CVD leaves the OI line still
+            // drawn underneath.
+            if (indicatorSeries) {
+                c.removeSeries(indicatorSeries);
+                indicatorSeries = null;
+            }
+            if (kind === "funding") {
+                indicatorSeries = c.addHistogramSeries({
+                    priceFormat: {
+                        type: "price",
+                        precision: 6,
+                        minMove: 0.000001,
+                    },
+                });
+            } else if (kind === "oi") {
+                indicatorSeries = c.addLineSeries({
+                    color: "#5c9eff",
+                    lineWidth: 2,
+                    priceFormat: { type: "volume" },
+                });
+            } else {
+                // cvd
+                indicatorSeries = c.addLineSeries({
+                    color: "#f5a623",
+                    lineWidth: 2,
+                });
+            }
+            indicatorSeries.setData(json.points);
+            c.timeScale().fitContent();
+        }
+
+        async function loadIndicator(value) {
+            if (!value) {
+                // Hide the pane but don't tear down `indicatorChart` —
+                // keep it warm so the next selection reuses it. The
+                // series is removed in renderIndicator() at next show.
+                hideIndicatorPane();
+                return;
+            }
+            const myId = ++lastIndicatorId;
+            const [kind, key] = value.split(":");
+            const url = buildIndicatorUrl(kind, key);
+
+            ensureIndicatorChart();         // also unhides the pane
+            setIndicatorLoading(true);
+            try {
+                const resp = await fetch(url, {
+                    headers: { Accept: "application/json" },
+                });
+                const json = await resp.json();
+                if (myId !== lastIndicatorId) return;  // newer pick won
+                if (!resp.ok) {
+                    throw new Error(json.message || "Indicator load failed");
+                }
+                renderIndicator(kind, json);
+                showIndicatorPane();
+            } catch (e) {
+                if (myId !== lastIndicatorId) return;
+                setStatus("Indicator error: " + e.message, true);
+            } finally {
+                if (myId === lastIndicatorId) setIndicatorLoading(false);
             }
         }
 
@@ -263,12 +465,30 @@
             pill.classList.add("is-active");
             current.symbol = sym;
             loadCandles();
+            // Indicator follows the symbol — re-fetch under the new pair
+            // if one is currently active. (interval is deliberately *not*
+            // tied to anything here; that's baked into `activeIndicator`.)
+            if (activeIndicator) {
+                loadIndicator(activeIndicator);
+            }
         });
 
         intervalSel.addEventListener("change", function () {
             current.interval = intervalSel.value;
             updateRefreshAvailability();
             loadCandles();
+            // Note: we intentionally do NOT reload the indicator here.
+            // The indicator's interval is part of `activeIndicator`
+            // (e.g. "cvd:5m"); the candle pane's interval is unrelated.
+        });
+
+        // Radio handler — single-select for the indicator. The `value`
+        // attribute is the "kind:key" string `loadIndicator` parses.
+        const indicatorsNav = document.getElementById("indicators");
+        indicatorsNav.addEventListener("change", function (ev) {
+            if (ev.target.name !== "indicator") return;
+            activeIndicator = ev.target.value;
+            loadIndicator(activeIndicator);
         });
 
         refreshBtn.addEventListener("click", refresh);

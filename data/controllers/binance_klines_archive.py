@@ -137,6 +137,14 @@ class BinanceKlinesArchiveController:
         symbol, interval, months = self._validate(symbol, interval, months)
 
         month_starts = self._month_range(months)
+        logger.info(
+            "klines backfill start: symbol=%s interval=%s months=%d (%s..%s)",
+            symbol,
+            interval,
+            months,
+            month_starts[0].strftime("%Y-%m"),
+            month_starts[-1].strftime("%Y-%m"),
+        )
 
         months_attempted = 0
         months_skipped = 0
@@ -145,11 +153,18 @@ class BinanceKlinesArchiveController:
         rows_created = 0
         rows_updated = 0
 
-        for month in month_starts:
+        total_months = len(month_starts)
+        for idx, month in enumerate(month_starts, start=1):
             months_attempted += 1
             rows = self._fetch_month(symbol, interval, month)
             if rows is None:
                 months_skipped += 1
+                logger.info(
+                    "klines backfill month %d/%d: %s SKIP (archive not published)",
+                    idx,
+                    total_months,
+                    month.strftime("%Y-%m"),
+                )
                 continue
             self._sanity_check(symbol, interval, month, rows)
             created, updated = self._persist_month(symbol, interval, rows)
@@ -157,6 +172,15 @@ class BinanceKlinesArchiveController:
             rows_received += len(rows)
             rows_created += created
             rows_updated += updated
+            logger.info(
+                "klines backfill month %d/%d: %s rows=%d created=%d updated=%d",
+                idx,
+                total_months,
+                month.strftime("%Y-%m"),
+                len(rows),
+                created,
+                updated,
+            )
 
         # Daily phase: fill the in-progress current calendar month, which
         # has no monthly ZIP yet. Without this, a `--months N` run would
@@ -164,16 +188,32 @@ class BinanceKlinesArchiveController:
         # day of previous month, 23:45 UTC) and whatever the live fetcher
         # caught with its limited look-back window.
         day_starts = self._current_month_days()
+        if day_starts:
+            logger.info(
+                "klines backfill daily phase: symbol=%s interval=%s days=%d (%s..%s)",
+                symbol,
+                interval,
+                len(day_starts),
+                day_starts[0].isoformat(),
+                day_starts[-1].isoformat(),
+            )
 
         days_attempted = 0
         days_skipped = 0
         days_succeeded = 0
 
-        for day in day_starts:
+        total_days = len(day_starts)
+        for idx, day in enumerate(day_starts, start=1):
             days_attempted += 1
             rows = self._fetch_day(symbol, interval, day)
             if rows is None:
                 days_skipped += 1
+                logger.info(
+                    "klines backfill day %d/%d: %s SKIP (archive not yet published)",
+                    idx,
+                    total_days,
+                    day.isoformat(),
+                )
                 continue
             self._sanity_check_day(symbol, interval, day, rows)
             created, updated = self._persist_month(symbol, interval, rows)
@@ -181,6 +221,30 @@ class BinanceKlinesArchiveController:
             rows_received += len(rows)
             rows_created += created
             rows_updated += updated
+            logger.info(
+                "klines backfill day %d/%d: %s rows=%d created=%d updated=%d",
+                idx,
+                total_days,
+                day.isoformat(),
+                len(rows),
+                created,
+                updated,
+            )
+
+        logger.info(
+            "klines backfill done: symbol=%s interval=%s "
+            "months=%d ok/%d skip days=%d ok/%d skip "
+            "rows received=%d created=%d updated=%d",
+            symbol,
+            interval,
+            months_succeeded,
+            months_skipped,
+            days_succeeded,
+            days_skipped,
+            rows_received,
+            rows_created,
+            rows_updated,
+        )
 
         return BackfillResult(
             symbol=symbol,
@@ -272,7 +336,9 @@ class BinanceKlinesArchiveController:
         """
         resp = requests.get(url, timeout=self.REQUEST_TIMEOUT)
         if resp.status_code == 404:
-            logger.info("klines archive 404: %s", label)
+            # Caller logs the user-facing SKIP at info; this is just the
+            # plumbing-level URL for debugging.
+            logger.debug("klines archive 404: %s", label)
             return None
         resp.raise_for_status()
 

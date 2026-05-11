@@ -102,3 +102,37 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Logging — project apps emit INFO to stdout by default so a `runserver`
+# console and `manage.py` commands both show fetch/backfill progress
+# without extra plumbing. Override the threshold per-deploy with
+# `DJANGO_LOG_LEVEL=DEBUG|WARNING|...`. Django's own loggers keep their
+# built-in config (DEBUG → request/SQL logging stays available when DEBUG
+# is on) — that's what `disable_existing_loggers: False` preserves.
+_APP_LOG_LEVEL = os.environ.get("DJANGO_LOG_LEVEL", "INFO")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "console": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "console",
+        },
+    },
+    "loggers": {
+        # Our three apps — single source for the threshold. `propagate:
+        # False` keeps each line from being re-emitted by the root logger.
+        app: {
+            "handlers": ["console"],
+            "level": _APP_LOG_LEVEL,
+            "propagate": False,
+        }
+        for app in ("data", "feature", "chart")
+    },
+}

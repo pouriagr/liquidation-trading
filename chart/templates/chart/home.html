@@ -25,18 +25,48 @@
     </header>
 
     <div id="below">
-        <main id="chart"></main>
+        {% comment %}
+        Vertical split: candle chart on top, optional indicator sub-pane
+        underneath. The price chart keeps id="chart" so home.js's existing
+        references (loading overlay, ResizeObserver, context menu, candle
+        series) need no changes — only its *parent* moved.
+        {% endcomment %}
+        <main id="chart-stack">
+            <div id="chart"></div>
+            <div id="indicator-chart" class="is-hidden"></div>
+        </main>
 
         {% comment %}
-        Right-side favorites sidebar (TradingView style). Same data-symbol /
-        is-active contract as before so home.js click delegation still works.
+        Right-side panel. Two vertically-stacked sections inside one fixed-
+        width column: coins list on top (scrollable, takes all remaining
+        height), indicator picker on the bottom (natural height, anchored).
+        Same data-symbol / is-active contract on the pills so home.js click
+        delegation still works.
+
+        The indicator picker is single-select. Each `value` is a "kind:key"
+        pair (empty string = hide the pane). Intervals are fixed in the
+        choice, *not* tied to #interval above — by design, since the
+        framework wants e.g. CVD on its own 5m/15m resolutions regardless
+        of what the price chart is currently displaying.
         {% endcomment %}
-        <aside id="symbols" class="sidebar" aria-label="Symbol">
-            {% for value, label in symbols %}
-                <button type="button"
-                        class="pill{% if value == initial_symbol %} is-active{% endif %}"
-                        data-symbol="{{ value }}">{{ label }}</button>
-            {% endfor %}
+        <aside class="sidebar-stack" aria-label="Symbols and indicators">
+            <div id="symbols" class="sidebar-section sidebar-section--scroll" aria-label="Symbol">
+                {% for value, label in symbols %}
+                    <button type="button"
+                            class="pill{% if value == initial_symbol %} is-active{% endif %}"
+                            data-symbol="{{ value }}">{{ label }}</button>
+                {% endfor %}
+            </div>
+
+            <div id="indicators" class="sidebar-section sidebar-section--bottom" aria-label="Indicator">
+                <div class="sidebar-heading">Indicator</div>
+                <label class="radio-pill"><input type="radio" name="indicator" value="" checked> None</label>
+                <label class="radio-pill"><input type="radio" name="indicator" value="oi:5m"> OI 5m</label>
+                <label class="radio-pill"><input type="radio" name="indicator" value="oi:1h"> OI 1h</label>
+                <label class="radio-pill"><input type="radio" name="indicator" value="funding"> Funding</label>
+                <label class="radio-pill"><input type="radio" name="indicator" value="cvd:5m"> CVD 5m</label>
+                <label class="radio-pill"><input type="radio" name="indicator" value="cvd:15m"> CVD 15m</label>
+            </div>
         </aside>
     </div>
 
@@ -59,7 +89,13 @@
         };
         window.CHART_URLS = {
             candles: "{% url 'chart:candles' symbol='__SYM__' interval='__INT__' %}",
-            refresh: "{% url 'chart:refresh' symbol='__SYM__' interval='__INT__' %}"
+            refresh: "{% url 'chart:refresh' symbol='__SYM__' interval='__INT__' %}",
+            // Indicator endpoints. `oi` and `cvd` both use the `__INT__`
+            // placeholder for their second segment (period / interval),
+            // so the JS helper can substitute uniformly.
+            oi:      "{% url 'chart:oi'      symbol='__SYM__' period='__INT__' %}",
+            funding: "{% url 'chart:funding' symbol='__SYM__' %}",
+            cvd:     "{% url 'chart:cvd'     symbol='__SYM__' interval='__INT__' %}"
         };
     </script>
 </body>

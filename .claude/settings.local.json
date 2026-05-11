@@ -18,7 +18,8 @@
       "Bash(Get-ChildItem -Recurse -Filter \"*test*\" -ErrorAction SilentlyContinue)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(poetry run *)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "Bash(poetry run *)"
     ]
   }
 }

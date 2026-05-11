@@ -51,6 +51,14 @@ pre-commit
 poetry run python manage.py createsuperuser
 ```
 
+## Logging
+
+Fetch, backfill, refresh, and OI-aggregation controllers emit progress to
+stdout via Python's `logging` module. The threshold is `INFO` by default
+— enough to watch a year-long backfill stream day-by-day — and is
+controlled by `DJANGO_LOG_LEVEL` (e.g. `DJANGO_LOG_LEVEL=DEBUG` adds
+plumbing-level archive URLs; `WARNING` silences the per-step lines).
+
 ## Agent Guidance
 
 Agent-specific project guidance lives in [`AGENTS.md`](AGENTS.md). Keep this README

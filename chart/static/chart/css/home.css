@@ -88,13 +88,62 @@ body {
     color: #ef5350;
 }
 
-/* Chart pane — fills remaining space inside #below. The ::after pseudo
-   element is the dim overlay shown while a fetch is in flight. */
+/* Centre column: vertical stack of the price chart on top and an
+   optional indicator sub-pane below. Takes whatever horizontal space
+   #below has left after the right-side sidebars.
+
+   The same min-width:0 / min-height:0 trick #below relies on applies
+   here — without it, the flex children refuse to shrink and the page
+   gets a scrollbar. */
+#chart-stack {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Price chart — fills the available space in #chart-stack. The
+   ::after pseudo element is the dim overlay shown while a fetch is
+   in flight. */
 #chart {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     position: relative;
+}
+
+/* Indicator sub-pane. RSI-style proportion (~25%) when visible. Has
+   its own loading overlay so a slow CVD request can dim only this
+   pane rather than the whole chart stack. */
+#indicator-chart {
+    flex: 0 0 25%;
+    min-height: 0;
+    border-top: 1px solid #2a2e39;
+    position: relative;
+}
+
+#indicator-chart.is-hidden {
+    display: none;
+}
+
+#indicator-chart::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(19, 23, 34, 0.55);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+}
+
+#indicator-chart.is-loading::after {
+    opacity: 1;
+}
+
+#indicator-chart.is-loading {
+    cursor: progress;
 }
 
 #chart::after {
@@ -116,16 +165,39 @@ body {
     cursor: progress;
 }
 
-/* Right-side favorites sidebar */
-#symbols.sidebar {
+/* Right-side panel. One fixed-width column containing two vertically
+   stacked sections: coins on top (scrollable), indicators on the
+   bottom (anchored at natural height). The wrapper owns the border
+   and background so the two sections read as a single visual block. */
+.sidebar-stack {
     flex: 0 0 200px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid #2a2e39;
+    background: #1e222d;
+}
+
+.sidebar-section {
     display: flex;
     flex-direction: column;
     gap: 2px;
     padding: 8px;
-    border-left: 1px solid #2a2e39;
-    background: #1e222d;
+}
+
+/* Coins block — takes whatever vertical space is left, scrolls when the
+   symbol list overflows. `min-height: 0` lets it actually shrink inside
+   the flex column (without it, content forces overflow on the body). */
+.sidebar-section--scroll {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+}
+
+/* Indicator block — natural height, sits at the bottom of the stack. */
+.sidebar-section--bottom {
+    flex: 0 0 auto;
+    border-top: 1px solid #2a2e39;
 }
 
 .pill {
@@ -140,7 +212,7 @@ body {
     transition: background-color 0.12s, color 0.12s;
 }
 
-#symbols.sidebar .pill {
+#symbols .pill {
     width: 100%;
     text-align: left;
     padding: 8px 10px;
@@ -155,6 +227,33 @@ body {
     background: #2962ff;
     color: #fff;
     border-color: #2962ff;
+}
+
+.sidebar-heading {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #787b86;
+    padding: 4px 6px 8px;
+}
+
+.radio-pill {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 4px;
+    color: #b2b5be;
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+}
+
+.radio-pill:hover {
+    background: #2a2e39;
+    color: #d1d4dc;
+}
+
+.radio-pill input {
+    margin-right: 8px;
 }
 
 /* Right-click context menu for the chart. Position is set inline by

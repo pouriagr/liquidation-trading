@@ -19,13 +19,21 @@ is read on demand via `feature.controllers.cvd_controller`.
 
 For each source the strategy is the same:
 
-  1. Check the earliest timestamp already in the DB for that source.
-  2. If it covers `LOOKBACK_DAYS` (1 year) — call only the live `fetch_*`
-     controller to top up the tail. Cheap, fast, idempotent.
+  1. Count rows for the source in the `[now − LOOKBACK_DAYS, now]`
+     window and compare against the expected count derived from that
+     source's native cadence (see `_covers_lookback`).
+  2. If recent coverage is dense (≥ `DENSITY_THRESHOLD` of expected) —
+     call only the live `fetch_*` controller to top up the tail. Cheap,
+     fast, idempotent.
   3. Otherwise — call the matching `backfill_*` controller first, *then*
      the live fetch. The archive controllers cover history up to a
      recent boundary; the live fetch closes the small gap between that
      boundary and "now".
+
+Counting rows (rather than just inspecting min/max timestamps) catches
+the orphan-island case: a stray ancient row + a thin recent tail with
+a year-long empty gap in between would otherwise pass an earliest-only
+check and silently skip the backfill that's actually needed.
 
 After the 5m OI step succeeds, the 1h OI rows are re-derived via
 `OIAggregatorController` over the recent window and persisted as
@@ -45,8 +53,6 @@ refresh, matching the "max possible data" intent.
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-
-from django.db.models import Min
 
 from data.controllers import (
     binance_candles_controller,
@@ -88,6 +94,28 @@ class RefreshController:
     # — the user-stated requirement that drove this controller.
     LOOKBACK_DAYS = 365
 
+    # Minimum row-count fraction (relative to the cadence-derived expected
+    # count) the lookback window must already hold before we skip the
+    # backfill. Tolerates ~10% holes — Binance archive 404s for individual
+    # days, pairs that listed mid-window, etc. — while still catching the
+    # orphan-island case where a stray ancient row tricks an earliest-only
+    # check (recent density there comes out near 0%).
+    DENSITY_THRESHOLD = 0.90
+
+    # Rows-per-day for each source, used to compute the expected count
+    # over `LOOKBACK_DAYS`. Keeping the cadence table here (rather than
+    # importing it from `data/`) keeps the orchestrator independent of
+    # any one ingest controller's private constants — `data.controllers`
+    # owns the fetch rhythm; we own the coverage policy.
+    _CANDLE_ROWS_PER_DAY: dict[str, float] = {
+        "5m": 288, "15m": 96, "30m": 48, "1h": 24,
+        "2h": 12, "4h": 6, "6h": 4, "8h": 3,
+        "12h": 2, "1d": 1,
+    }  # fmt: skip
+    _OI_ROWS_PER_DAY: dict[str, float] = {"5m": 288, "1h": 24}
+    # Binance USDT-M perpetuals settle funding every 8h → 3 rows/day.
+    _FUNDING_ROWS_PER_DAY: float = 3.0
+
     # The framework's decision rhythm. Refresh is hard-gated to this
     # interval; the controller raises ValueError on any other value so the
     # chart's per-interval refresh button can be disabled safely.
@@ -123,6 +151,7 @@ class RefreshController:
         """
         symbol, interval = self._validate(symbol, interval)
 
+        logger.info("refresh start: symbol=%s interval=%s", symbol, interval)
         result = RefreshResult(symbol=symbol, decision_interval=interval)
 
         for tf in self.CANDLE_INTERVALS:
@@ -139,23 +168,52 @@ class RefreshController:
         # actually refreshed (zero received → zero created/updated).
         result.sources.append(self._derive_oi_1h(symbol))
 
+        ok = sum(1 for s in result.sources if s.error is None)
+        failed = len(result.sources) - ok
+        logger.info(
+            "refresh done: symbol=%s sources=%d ok=%d failed=%d",
+            symbol,
+            len(result.sources),
+            ok,
+            failed,
+        )
         return result
 
     # ---- internals — per-source orchestration -------------------------------
     def _refresh_candles(self, symbol: str, interval: str) -> SourceResult:
         label = f"candles {interval}"
         try:
-            earliest = Candle.objects.filter(symbol=symbol, interval=interval).aggregate(
-                m=Min("open_time")
-            )["m"]
+            recent = Candle.objects.filter(
+                symbol=symbol,
+                interval=interval,
+                open_time__gte=self._lookback_start(),
+            ).count()
+            expected = self.LOOKBACK_DAYS * self._CANDLE_ROWS_PER_DAY[interval]
+            density = (recent / expected) if expected else 0
+            logger.info(
+                "refresh source start: %s density=%.1f%% (recent=%d expected=%d)",
+                label,
+                density * 100,
+                recent,
+                int(expected),
+            )
             backfilled = False
-            if not self._has_year(earliest):
+            if not self._covers_lookback(recent, expected):
+                logger.info("refresh source: %s backfill required", label)
                 binance_klines_archive_controller.backfill(
                     symbol=symbol, interval=interval, months=12
                 )
                 backfilled = True
             fetch = binance_candles_controller.fetch_and_store(
                 symbol=symbol, interval=interval, limit=self.CANDLE_FETCH_LIMIT
+            )
+            logger.info(
+                "refresh source done: %s received=%d created=%d updated=%d backfilled=%s",
+                label,
+                fetch.received,
+                fetch.created,
+                fetch.updated,
+                backfilled,
             )
             return SourceResult(
                 label=label,
@@ -178,18 +236,43 @@ class RefreshController:
     def _refresh_oi(self, symbol: str, period: str) -> SourceResult:
         label = f"oi {period}"
         try:
-            earliest = OpenInterest.objects.filter(symbol=symbol, period=period).aggregate(
-                m=Min("timestamp")
-            )["m"]
+            recent = OpenInterest.objects.filter(
+                symbol=symbol,
+                period=period,
+                timestamp__gte=self._lookback_start(),
+            ).count()
+            expected = self.LOOKBACK_DAYS * self._OI_ROWS_PER_DAY[period]
+            density = (recent / expected) if expected else 0
+            logger.info(
+                "refresh source start: %s density=%.1f%% (recent=%d expected=%d)",
+                label,
+                density * 100,
+                recent,
+                int(expected),
+            )
             backfilled = False
-            if not self._has_year(earliest):
+            if not self._covers_lookback(recent, expected):
                 today = self._now().date()
                 start = today - timedelta(days=self.LOOKBACK_DAYS)
                 end = today - timedelta(days=1)  # archive controller requires end < today
+                logger.info(
+                    "refresh source: %s backfill required (%s..%s)",
+                    label,
+                    start.isoformat(),
+                    end.isoformat(),
+                )
                 binance_metrics_archive_controller.backfill(symbol=symbol, start=start, end=end)
                 backfilled = True
             fetch = binance_open_interest_controller.fetch_and_store(
                 symbol=symbol, period=period, limit=self.OI_FETCH_LIMIT
+            )
+            logger.info(
+                "refresh source done: %s received=%d created=%d updated=%d backfilled=%s",
+                label,
+                fetch.received,
+                fetch.created,
+                fetch.updated,
+                backfilled,
             )
             return SourceResult(
                 label=label,
@@ -212,15 +295,30 @@ class RefreshController:
     def _refresh_funding(self, symbol: str) -> SourceResult:
         label = "funding"
         try:
-            earliest = FundingRate.objects.filter(symbol=symbol).aggregate(m=Min("funding_time"))[
-                "m"
-            ]
+            recent = FundingRate.objects.filter(
+                symbol=symbol,
+                funding_time__gte=self._lookback_start(),
+            ).count()
+            expected = self.LOOKBACK_DAYS * self._FUNDING_ROWS_PER_DAY
+            density = (recent / expected) if expected else 0
+            logger.info(
+                "refresh source start: %s density=%.1f%% (recent=%d expected=%d)",
+                label,
+                density * 100,
+                recent,
+                int(expected),
+            )
             # FundingRate has no dedicated backfill controller — the live
             # fetch endpoint already serves full history when given a
             # start_time, and the controller pages internally via _paginate.
             # So "backfill" here is the same controller called in range mode.
-            if not self._has_year(earliest):
+            if not self._covers_lookback(recent, expected):
                 start_time = self._now() - timedelta(days=self.LOOKBACK_DAYS)
+                logger.info(
+                    "refresh source: %s backfill required (start_time=%s)",
+                    label,
+                    start_time.isoformat(),
+                )
                 ranged = binance_funding_rate_controller.fetch_and_store(
                     symbol=symbol,
                     limit=self.FUNDING_FETCH_LIMIT,
@@ -232,6 +330,13 @@ class RefreshController:
                 tail = binance_funding_rate_controller.fetch_and_store(
                     symbol=symbol, limit=self.FUNDING_FETCH_LIMIT
                 )
+                logger.info(
+                    "refresh source done: %s received=%d created=%d updated=%d backfilled=True",
+                    label,
+                    ranged.received + tail.received,
+                    ranged.created + tail.created,
+                    ranged.updated + tail.updated,
+                )
                 return SourceResult(
                     label=label,
                     backfilled=True,
@@ -241,6 +346,13 @@ class RefreshController:
                 )
             fetch = binance_funding_rate_controller.fetch_and_store(
                 symbol=symbol, limit=self.FUNDING_FETCH_LIMIT
+            )
+            logger.info(
+                "refresh source done: %s received=%d created=%d updated=%d backfilled=False",
+                label,
+                fetch.received,
+                fetch.created,
+                fetch.updated,
             )
             return SourceResult(
                 label=label,
@@ -271,7 +383,16 @@ class RefreshController:
         """
         label = "oi 1h (derived)"
         try:
+            logger.info("refresh source start: %s (days=%d)", label, self.LOOKBACK_DAYS)
             res = self._oi_aggregator.aggregate_recent(symbol=symbol, days=self.LOOKBACK_DAYS)
+            logger.info(
+                "refresh source done: %s read_5m=%d written_1h=%d created=%d updated=%d",
+                label,
+                res.rows_read_5m,
+                res.rows_written_1h,
+                res.rows_created,
+                res.rows_updated,
+            )
             return SourceResult(
                 label=label,
                 backfilled=False,  # derivation, not a fetch
@@ -305,11 +426,37 @@ class RefreshController:
             )
         return normalized_symbol, interval
 
-    def _has_year(self, earliest: datetime | None) -> bool:
-        """True iff the DB already covers `LOOKBACK_DAYS` for this source."""
-        if earliest is None:
+    def _covers_lookback(self, recent_count: int, expected_recent: float) -> bool:
+        """True iff the lookback window is densely enough populated to
+        skip the backfill.
+
+        The caller passes:
+          * `recent_count` — rows for this (symbol, source) whose
+            timestamp falls in `[now − LOOKBACK_DAYS, now]`.
+          * `expected_recent` — what that count would be at the source's
+            native cadence (e.g. 365 × 288 for 5m over a year).
+
+        We require `recent_count / expected_recent ≥ DENSITY_THRESHOLD`.
+        Density subsumes the older earliest/latest pair of checks:
+          * a window that doesn't reach back a full year → recent rows
+            are missing on the old end → density falls below threshold;
+          * a stale tail (latest is weeks/months old) → recent rows
+            are missing on the new end → density falls below threshold;
+          * an orphan-island state (one stray ancient row outside the
+            window + a thin recent tail) → recent count is tiny → density
+            falls far below threshold and the backfill fires.
+
+        One row counts as covered without exceptions — even a single
+        `expected_recent < 1` source (none today, but future-proof) would
+        return True iff the row is present.
+        """
+        if expected_recent <= 0:
             return False
-        return earliest <= self._now() - timedelta(days=self.LOOKBACK_DAYS)
+        return (recent_count / expected_recent) >= self.DENSITY_THRESHOLD
+
+    def _lookback_start(self) -> datetime:
+        """Start of the lookback window — the lower bound on "recent" rows."""
+        return self._now() - timedelta(days=self.LOOKBACK_DAYS)
 
     @staticmethod
     def _now() -> datetime:

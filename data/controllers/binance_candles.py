@@ -11,6 +11,7 @@ header is needed. See:
 https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -19,6 +20,8 @@ import requests
 from django.db import transaction
 
 from data.models import Candle, Interval, Symbol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,8 +62,17 @@ class BinanceCandlesController:
         symbol+interval+open_time) and inserts any newly closed candles.
         """
         symbol, interval, limit = self._validate(symbol, interval, limit)
+        logger.info("candles fetch start: symbol=%s interval=%s limit=%d", symbol, interval, limit)
         rows = self._fetch(symbol, interval, limit)
         created, updated = self._persist(symbol, interval, rows)
+        logger.info(
+            "candles fetch done: symbol=%s interval=%s received=%d created=%d updated=%d",
+            symbol,
+            interval,
+            len(rows),
+            created,
+            updated,
+        )
         return FetchResult(
             symbol=symbol,
             interval=interval,

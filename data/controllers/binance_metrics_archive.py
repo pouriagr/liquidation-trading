@@ -84,6 +84,15 @@ class BinanceMetricsArchiveController:
         """
         symbol, start, end = self._validate(symbol, start, end)
 
+        total_days = (end - start).days + 1
+        logger.info(
+            "metrics backfill start: symbol=%s start=%s end=%s (%d days)",
+            symbol,
+            start.isoformat(),
+            end.isoformat(),
+            total_days,
+        )
+
         days_attempted = 0
         days_skipped = 0
         days_succeeded = 0
@@ -97,6 +106,12 @@ class BinanceMetricsArchiveController:
             rows = self._fetch_day(symbol, day)
             if rows is None:
                 days_skipped += 1
+                logger.info(
+                    "metrics backfill day %d/%d: %s SKIP (archive not published)",
+                    days_attempted,
+                    total_days,
+                    day.isoformat(),
+                )
             else:
                 self._sanity_check(symbol, day, rows)
                 created, updated = self._persist_day(symbol, rows)
@@ -104,7 +119,27 @@ class BinanceMetricsArchiveController:
                 rows_received += len(rows)
                 rows_created += created
                 rows_updated += updated
+                logger.info(
+                    "metrics backfill day %d/%d: %s rows=%d created=%d updated=%d",
+                    days_attempted,
+                    total_days,
+                    day.isoformat(),
+                    len(rows),
+                    created,
+                    updated,
+                )
             day += timedelta(days=1)
+
+        logger.info(
+            "metrics backfill done: symbol=%s days=%d ok/%d skip "
+            "rows received=%d created=%d updated=%d",
+            symbol,
+            days_succeeded,
+            days_skipped,
+            rows_received,
+            rows_created,
+            rows_updated,
+        )
 
         return BackfillResult(
             symbol=symbol,
@@ -143,7 +178,9 @@ class BinanceMetricsArchiveController:
         url = self.BASE_URL.format(symbol=symbol, date=day.isoformat())
         resp = requests.get(url, timeout=self.REQUEST_TIMEOUT)
         if resp.status_code == 404:
-            logger.info("metrics archive 404: %s %s", symbol, day.isoformat())
+            # Caller logs the user-facing SKIP at info; this is just the
+            # plumbing-level URL for debugging.
+            logger.debug("metrics archive 404: %s %s", symbol, day.isoformat())
             return None
         resp.raise_for_status()
 

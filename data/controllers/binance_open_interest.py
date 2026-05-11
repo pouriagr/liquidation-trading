@@ -16,6 +16,7 @@ The public endpoint serves only the most recent ~30 days of history (see
 window requires a paid source such as Coinalyze.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +25,8 @@ import requests
 from django.db import transaction
 
 from data.models import OpenInterest, Symbol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,8 +69,17 @@ class BinanceOpenInterestController:
         symbol+period+timestamp) and inserts any newly closed buckets.
         """
         symbol, period, limit = self._validate(symbol, period, limit)
+        logger.info("oi fetch start: symbol=%s period=%s limit=%d", symbol, period, limit)
         rows = self._fetch(symbol, period, limit)
         created, updated = self._persist(symbol, period, rows)
+        logger.info(
+            "oi fetch done: symbol=%s period=%s received=%d created=%d updated=%d",
+            symbol,
+            period,
+            len(rows),
+            created,
+            updated,
+        )
         return FetchResult(
             symbol=symbol,
             period=period,

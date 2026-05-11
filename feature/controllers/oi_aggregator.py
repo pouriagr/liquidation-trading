@@ -72,6 +72,13 @@ class OIAggregatorController:
             start = hour_floor(start)
         # `end` is exclusive; we leave it as-is and use `__lt` below.
 
+        logger.info(
+            "oi 1h aggregate start: symbol=%s start=%s end=%s",
+            symbol,
+            start.isoformat() if start else "(open)",
+            end.isoformat() if end else "(open)",
+        )
+
         qs = OpenInterest.objects.filter(symbol=symbol, period=self.SOURCE_PERIOD)
         if start is not None:
             qs = qs.filter(timestamp__gte=start)
@@ -84,6 +91,7 @@ class OIAggregatorController:
             )
         )
         if not rows_5m:
+            logger.info("oi 1h aggregate done: symbol=%s no 5m rows in window", symbol)
             return AggregationResult(
                 symbol=symbol,
                 rows_read_5m=0,
@@ -98,6 +106,15 @@ class OIAggregatorController:
         # already produces those via `values_list`.
         hourly = aggregate_5m_to_1h(rows_5m)
         created, updated = self._persist(symbol, hourly)
+
+        logger.info(
+            "oi 1h aggregate done: symbol=%s read_5m=%d written_1h=%d created=%d updated=%d",
+            symbol,
+            len(rows_5m),
+            len(hourly),
+            created,
+            updated,
+        )
 
         return AggregationResult(
             symbol=symbol,

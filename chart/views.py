@@ -15,12 +15,23 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
-from chart.serializers import candles_payload
+from chart.serializers import (
+    candles_payload,
+    cvd_payload,
+    funding_payload,
+    oi_payload,
+)
 from data.controllers import binance_candles_controller
-from data.models import Candle, Interval, Symbol
-from feature.controllers import refresh_controller
+from data.models import Candle, FundingRate, Interval, OpenInterest, Symbol
+from feature.controllers import cvd_controller, refresh_controller
 
 _DEFAULT_LIMIT = 500
+# CVD lookback in days — matches `feature.controllers.refresh.LOOKBACK_DAYS`
+# so the indicator sub-pane spans the same time window as the candle pane
+# after a successful refresh. `CVDController.series` is vectorised with
+# pandas rolling, so even the largest case (5m → ~105k anchors) stays
+# inside a typical HTTP round-trip budget.
+_CVD_LOOKBACK_DAYS = 365
 
 
 def home(request: HttpRequest) -> HttpResponse:
@@ -79,6 +90,55 @@ def refresh_api(request: HttpRequest, symbol: str, interval: str) -> JsonRespons
             "sources": [asdict(s) for s in result.sources],
         }
         return payload
+
+    return _run(_do)
+
+
+# ---- indicator APIs --------------------------------------------------------
+# Three read-only endpoints feeding the sub-pane under the candle chart.
+# Each one is a thin wrapper: ORM read (or controller call) → payload
+# helper → JSON envelope via `_run`. The data they expose is what
+# `feature.controllers.refresh_controller.refresh()` has already
+# ingested/derived — these views never trigger upstream fetches.
+@require_GET
+def oi_api(request: HttpRequest, symbol: str, period: str) -> JsonResponse:
+    """Return all OpenInterest rows for (symbol, period), oldest→newest."""
+
+    def _do() -> dict:
+        rows = (
+            OpenInterest.objects.filter(symbol=symbol, period=period)
+            .order_by("timestamp")
+            .values("timestamp", "sum_open_interest_value")
+        )
+        return oi_payload(symbol, period, rows)
+
+    return _run(_do)
+
+
+@require_GET
+def funding_api(request: HttpRequest, symbol: str) -> JsonResponse:
+    """Return all FundingRate settlements for `symbol`, oldest→newest."""
+
+    def _do() -> dict:
+        rows = (
+            FundingRate.objects.filter(symbol=symbol)
+            .order_by("funding_time")
+            .values("funding_time", "funding_rate")
+        )
+        return funding_payload(symbol, rows)
+
+    return _run(_do)
+
+
+@require_GET
+def cvd_api(request: HttpRequest, symbol: str, interval: str) -> JsonResponse:
+    """Return ~1 year of CVD anchors for (symbol, interval)."""
+
+    def _do() -> dict:
+        series = cvd_controller.series_for_lookback(
+            symbol=symbol, interval=interval, days=_CVD_LOOKBACK_DAYS
+        )
+        return cvd_payload(symbol, interval, series)
 
     return _run(_do)
 

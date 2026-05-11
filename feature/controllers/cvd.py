@@ -22,6 +22,8 @@ import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+import pandas as pd
+
 from data.models import Candle, Symbol
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,12 @@ class CVDController:
         applied to each anchor independently — a single hole inside
         the dataset only blanks out the windows that actually contain
         it, the others stay clean.
+
+        Vectorized with pandas rolling: the older per-anchor Python loop
+        was O(n × WINDOW), which crossed the request budget once n grew
+        to a year of 5m anchors (~105k × 200 ≈ 20M Decimal adds). The
+        rolling-sum path is O(n) and runs comfortably inside an HTTP
+        round-trip even at the full 1-year resolution.
         """
         symbol, interval = self._validate(symbol, interval)
         if n < 1:
@@ -103,21 +111,59 @@ class CVDController:
             tail = rows[-n:] if rows else []
             return [(r["open_time"], None) for r in tail]
 
-        expected_span = timedelta(minutes=(self.WINDOW - 1) * self._INTERVAL_MINUTES[interval])
+        df = pd.DataFrame(rows)
 
-        out: list[tuple[datetime, Decimal | None]] = []
-        for i in range(n):
-            window = rows[i : i + self.WINDOW]
-            anchor_time = window[-1]["open_time"]
-            cvd: Decimal | None
-            if window[-1]["open_time"] - window[0]["open_time"] == expected_span and all(
-                r["delta"] is not None for r in window
-            ):
-                cvd = sum((r["delta"] for r in window), Decimal(0))
-            else:
-                cvd = None
-            out.append((anchor_time, cvd))
-        return out
+        # Decimal → float64. `pd.to_numeric` turns None into NaN, which
+        # then propagates into the rolling sum as NaN so any anchor whose
+        # 200-bar window touches a missing delta blanks out automatically.
+        # We accept the float round-trip here because `cvd_payload` already
+        # casts the value through `float()` at serialization time, so the
+        # JSON payload is no less precise than it ever was.
+        delta_f = pd.to_numeric(df["delta"])
+
+        # Rolling sum over WINDOW bars; min_periods=WINDOW ensures the
+        # first WINDOW-1 anchors (which can't have a full trailing window
+        # within this slice) come out as NaN.
+        cvd_f = delta_f.rolling(window=self.WINDOW, min_periods=self.WINDOW).sum()
+
+        # Gap detection: anchor i has a clean window iff
+        # `open_time[i] - open_time[i - (WINDOW-1)]` equals the expected
+        # span. The `uniq_candle` constraint on (symbol, interval,
+        # open_time) rules out duplicates, so equal span over WINDOW rows
+        # implies a contiguous grid — one shift+compare instead of 199
+        # pairwise diffs per anchor.
+        expected_span = pd.Timedelta(minutes=(self.WINDOW - 1) * self._INTERVAL_MINUTES[interval])
+        span = df["open_time"] - df["open_time"].shift(self.WINDOW - 1)
+        cvd_f = cvd_f.where(span == expected_span, other=float("nan"))
+
+        # Emit the trailing n anchors. Convert each finite float back to
+        # Decimal so the public type stays `Decimal | None`; NaN → None.
+        anchor_times = df["open_time"].iloc[-n:].tolist()
+        anchor_cvds = cvd_f.iloc[-n:].tolist()
+        return [
+            (t, None if (v != v) else Decimal(str(v)))  # v != v: NaN check
+            for t, v in zip(anchor_times, anchor_cvds, strict=True)
+        ]
+
+    def series_for_lookback(
+        self, symbol: str, interval: str, days: int
+    ) -> list[tuple[datetime, Decimal | None]]:
+        """Convenience wrapper: return CVD anchors covering the last `days`.
+
+        Computes the anchor count from the interval's native cadence and
+        delegates to `series`. Lets callers (e.g. the chart view) ask for
+        "one year of CVD" without leaking the interval→minutes table
+        across module boundaries.
+        """
+        symbol, interval = self._validate(symbol, interval)
+        if days < 1:
+            raise ValueError("days must be >= 1")
+        minutes = self._INTERVAL_MINUTES[interval]
+        # Round up so a fractional final bar still gets an anchor — the
+        # series's own "not enough rows" path handles the under-filled
+        # case if the DB hasn't caught up to `days` yet.
+        n = -(-(days * 24 * 60) // minutes)
+        return self.series(symbol=symbol, interval=interval, n=n)
 
     # ---- internals --------------------------------------------------------
     def _validate(self, symbol: str, interval: str) -> tuple[str, str]:

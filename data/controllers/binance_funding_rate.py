@@ -17,6 +17,7 @@ is why this module owns both "latest N" and "date range" modes — we never
 need a separate archive source.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -25,6 +26,8 @@ import requests
 from django.db import transaction
 
 from data.models import FundingRate, Symbol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,8 +74,16 @@ class BinanceFundingRateController:
         """
         symbol, limit, start_time, end_time = self._validate(symbol, limit, start_time, end_time)
         if start_time is None and end_time is None:
+            logger.info("funding fetch start: symbol=%s mode=latest limit=%d", symbol, limit)
             rows = self._fetch_page(symbol=symbol, limit=limit)
         else:
+            logger.info(
+                "funding fetch start: symbol=%s mode=range limit=%d start=%s end=%s",
+                symbol,
+                limit,
+                start_time.isoformat() if start_time else "(open)",
+                end_time.isoformat() if end_time else "(open)",
+            )
             rows = self._paginate(
                 symbol=symbol,
                 start_time=start_time,
@@ -80,6 +91,13 @@ class BinanceFundingRateController:
                 limit=limit,
             )
         created, updated = self._persist(symbol, rows)
+        logger.info(
+            "funding fetch done: symbol=%s received=%d created=%d updated=%d",
+            symbol,
+            len(rows),
+            created,
+            updated,
+        )
         return FetchResult(
             symbol=symbol,
             requested=limit,
@@ -157,7 +175,7 @@ class BinanceFundingRateController:
         # returns the same boundary row indefinitely. 200 pages × 1000
         # rows = 200k settlements, far beyond any realistic backfill.
         MAX_PAGES = 200
-        for _ in range(MAX_PAGES):
+        for page_idx in range(1, MAX_PAGES + 1):
             page = self._fetch_page(
                 symbol=symbol,
                 limit=limit,
@@ -165,8 +183,15 @@ class BinanceFundingRateController:
                 end_time=end_time,
             )
             if not page:
+                logger.info("funding paginate page=%d: empty page, stopping", page_idx)
                 break
             all_rows.extend(page)
+            logger.info(
+                "funding paginate page=%d: received=%d cursor=%s",
+                page_idx,
+                len(page),
+                cursor.isoformat() if cursor else "(latest)",
+            )
             if len(page) < limit:
                 break
             last_ms = int(page[-1]["fundingTime"])
