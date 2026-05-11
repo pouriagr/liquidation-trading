@@ -69,9 +69,7 @@ class BinanceFundingRateController:
         rows via the unique constraint on (symbol, funding_time) and
         inserts new ones.
         """
-        symbol, limit, start_time, end_time = self._validate(
-            symbol, limit, start_time, end_time
-        )
+        symbol, limit, start_time, end_time = self._validate(symbol, limit, start_time, end_time)
         if start_time is None and end_time is None:
             rows = self._fetch_page(symbol=symbol, limit=limit)
         else:
@@ -104,13 +102,9 @@ class BinanceFundingRateController:
         if normalized_symbol not in self.ALLOWED_SYMBOLS:
             raise ValueError(f"symbol must be one of {sorted(self.ALLOWED_SYMBOLS)}")
         if not (self.MIN_LIMIT <= limit <= self.MAX_LIMIT):
-            raise ValueError(
-                f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}"
-            )
+            raise ValueError(f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}")
         for label, value in (("start_time", start_time), ("end_time", end_time)):
-            if value is not None and (
-                value.tzinfo is None or value.utcoffset() is None
-            ):
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
                 raise ValueError(f"{label} must be a timezone-aware datetime")
         if start_time is not None and end_time is not None and start_time > end_time:
             raise ValueError("start_time must be <= end_time")
@@ -176,9 +170,7 @@ class BinanceFundingRateController:
             if len(page) < limit:
                 break
             last_ms = int(page[-1]["fundingTime"])
-            next_cursor = datetime.fromtimestamp(last_ms / 1000, tz=UTC) + timedelta(
-                milliseconds=1
-            )
+            next_cursor = datetime.fromtimestamp(last_ms / 1000, tz=UTC) + timedelta(milliseconds=1)
             if end_time is not None and next_cursor > end_time:
                 break
             cursor = next_cursor

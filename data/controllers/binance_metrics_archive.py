@@ -131,9 +131,7 @@ class BinanceMetricsArchiveController:
             raise ValueError("start must be <= end")
         today_utc = datetime.now(UTC).date()
         if end >= today_utc:
-            raise ValueError(
-                "end must be before today UTC (the file is not yet published)"
-            )
+            raise ValueError("end must be before today UTC (the file is not yet published)")
         return normalized_symbol, start, end
 
     def _fetch_day(self, symbol: str, day: date) -> list[dict] | None:

@@ -50,9 +50,7 @@ class BinanceOpenInterestController:
     # strict subset of `Interval.values` — the kline-only intervals (1m, 3m,
     # 8h, 3d, 1w, 1M) are NOT valid here, so we cannot reuse Interval.values.
     # See the endpoint docs linked at the top of this module.
-    ALLOWED_PERIODS = frozenset(
-        {"5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}
-    )
+    ALLOWED_PERIODS = frozenset({"5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"})
 
     # ---- public entry point -------------------------------------------------
     def fetch_and_store(
@@ -89,9 +87,7 @@ class BinanceOpenInterestController:
         if period not in self.ALLOWED_PERIODS:
             raise ValueError(f"period must be one of {sorted(self.ALLOWED_PERIODS)}")
         if not (self.MIN_LIMIT <= limit <= self.MAX_LIMIT):
-            raise ValueError(
-                f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}"
-            )
+            raise ValueError(f"limit must be between {self.MIN_LIMIT} and {self.MAX_LIMIT}")
         return normalized_symbol, period, limit
 
     def _fetch(self, symbol: str, period: str, limit: int) -> list[dict]:

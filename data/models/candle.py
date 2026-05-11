@@ -53,6 +53,18 @@ class Candle(models.Model):
     taker_buy_base_volume = models.DecimalField(max_digits=30, decimal_places=8)
     taker_buy_quote_volume = models.DecimalField(max_digits=30, decimal_places=8)
 
+    # Per-bar volume delta = 2 × taker_buy_base_volume − volume. Populated
+    # automatically by a `pre_save` signal in the `feature` app
+    # (`feature.signals.set_candle_delta`) so the formula lives in one
+    # place and `data` stays a pure ingestion layer. CVD is the running
+    # sum of this column over a fixed window — see
+    # `feature.controllers.cvd.CVDController`.
+    #
+    # Nullable on purpose, permanently: a row written before the
+    # `feature` app was installed (or any future partial save) gets
+    # `NULL` here, and `CVDController` treats NULL as a window gap.
+    delta = models.DecimalField(max_digits=30, decimal_places=8, null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

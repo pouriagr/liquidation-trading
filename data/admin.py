@@ -7,7 +7,7 @@ from data.models import Candle, FundingRate, OpenInterest
 
 @admin.register(Candle)
 class CandleAdmin(admin.ModelAdmin):
-    list_display = ("symbol", "interval", "open_time", "close", "volume")
+    list_display = ("symbol", "interval", "open_time", "close", "volume", "delta")
     list_filter = ("symbol", "interval")
     search_fields = ("symbol",)
     date_hierarchy = "open_time"

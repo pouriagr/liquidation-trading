@@ -7,6 +7,7 @@ serialization in `chart.serializers`.
 """
 
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import Any
 
 import requests
@@ -17,6 +18,7 @@ from django.views.decorators.http import require_GET, require_POST
 from chart.serializers import candles_payload
 from data.controllers import binance_candles_controller
 from data.models import Candle, Interval, Symbol
+from feature.controllers import refresh_controller
 
 _DEFAULT_LIMIT = 500
 
@@ -50,9 +52,7 @@ def candles_api(request: HttpRequest, symbol: str, interval: str) -> JsonRespons
                 symbol=symbol, interval=interval, limit=_DEFAULT_LIMIT
             )
             fetched = True
-        qs = Candle.objects.filter(symbol=symbol, interval=interval).order_by(
-            "open_time"
-        )
+        qs = Candle.objects.filter(symbol=symbol, interval=interval).order_by("open_time")
         return candles_payload(symbol, interval, qs, fetched=fetched)
 
     return _run(_do)
@@ -60,21 +60,23 @@ def candles_api(request: HttpRequest, symbol: str, interval: str) -> JsonRespons
 
 @require_POST
 def refresh_api(request: HttpRequest, symbol: str, interval: str) -> JsonResponse:
-    """Force a fresh fetch + upsert, then return the latest candles."""
+    """Run the full 15m multi-source refresh, then return the 15m candle payload.
+
+    All orchestration — fetch-vs-backfill per source, OI 1h derivation,
+    per-source error capture — lives in `RefreshController`. This view is
+    deliberately thin: validation is the controller's job (it raises
+    `ValueError` on non-15m intervals, which `_run` turns into HTTP 400),
+    and the candle payload is assembled from the same `candles_payload`
+    serializer the GET endpoint uses.
+    """
 
     def _do() -> dict:
-        result = binance_candles_controller.fetch_and_store(
-            symbol=symbol, interval=interval, limit=_DEFAULT_LIMIT
-        )
-        qs = Candle.objects.filter(symbol=symbol, interval=interval).order_by(
-            "open_time"
-        )
+        result = refresh_controller.refresh(symbol=symbol, interval=interval)
+        qs = Candle.objects.filter(symbol=symbol, interval=interval).order_by("open_time")
         payload = candles_payload(symbol, interval, qs, fetched=True)
-        payload["result"] = {
-            "requested": result.requested,
-            "received": result.received,
-            "created": result.created,
-            "updated": result.updated,
+        payload["refresh"] = {
+            "decision_interval": result.decision_interval,
+            "sources": [asdict(s) for s in result.sources],
         }
         return payload
 
@@ -99,6 +101,4 @@ def _run(fn: Callable[[], dict[str, Any]]) -> JsonResponse:
             status=502,
         )
     except Exception:  # noqa: BLE001 — last-resort envelope
-        return JsonResponse(
-            {"error": "server", "message": "Internal error"}, status=500
-        )
+        return JsonResponse({"error": "server", "message": "Internal error"}, status=500)

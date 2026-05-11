@@ -44,20 +44,14 @@ class Migration(migrations.Migration):
                 ("funding_rate", models.DecimalField(decimal_places=10, max_digits=12)),
                 (
                     "mark_price",
-                    models.DecimalField(
-                        blank=True, decimal_places=8, max_digits=30, null=True
-                    ),
+                    models.DecimalField(blank=True, decimal_places=8, max_digits=30, null=True),
                 ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
                 "ordering": ["-funding_time"],
-                "indexes": [
-                    models.Index(
-                        fields=["symbol", "-funding_time"], name="fr_lookup_idx"
-                    )
-                ],
+                "indexes": [models.Index(fields=["symbol", "-funding_time"], name="fr_lookup_idx")],
                 "constraints": [
                     models.UniqueConstraint(
                         fields=("symbol", "funding_time"), name="uniq_funding_rate"
