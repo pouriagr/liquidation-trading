@@ -19,7 +19,11 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(poetry run *)",
       "PowerShell(git *)",
-      "Bash(poetry run *)"
+      "Bash(poetry run *)",
+      "Bash(DJANGO_SETTINGS_MODULE=core.settings poetry run python -c ' *)",
+      "Bash(DJANGO_SETTINGS_MODULE=core.settings poetry run python -c \"import django; django.setup\\(\\); from feature.controllers import cluster_identifier_controller as c; print\\('default:', c.identify\\('BTCUSDT'\\).lookback_days\\); print\\('1d:', c.identify\\('BTCUSDT', lookback_days=1\\).lookback_days\\); print\\('7d:', c.identify\\('BTCUSDT', lookback_days=7\\).lookback_days\\)\")",
+      "Bash(DJANGO_SETTINGS_MODULE=core.settings poetry run python -c 'import django; django.setup\\(\\); from feature.controllers import cluster_identifier_controller as c *)",
+      "Bash(python -m pytest chart/tests/ feature/tests/test_clustering.py -x -q)"
     ]
   }
 }

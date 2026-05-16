@@ -7,7 +7,8 @@ continue to work after splitting the module into a package.
 
 from data.models.candle import Candle
 from data.models.choices import Interval, Symbol
+from data.models.cluster_segment import ClusterSegment
 from data.models.funding_rate import FundingRate
 from data.models.open_interest import OpenInterest
 
-__all__ = ["Candle", "FundingRate", "Interval", "OpenInterest", "Symbol"]
+__all__ = ["Candle", "ClusterSegment", "FundingRate", "Interval", "OpenInterest", "Symbol"]

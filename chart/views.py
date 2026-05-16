@@ -17,13 +17,15 @@ from django.views.decorators.http import require_GET, require_POST
 
 from chart.serializers import (
     candles_payload,
+    cluster_payload,
     cvd_payload,
     funding_payload,
     oi_payload,
 )
 from data.controllers import binance_candles_controller
-from data.models import Candle, FundingRate, Interval, OpenInterest, Symbol
+from data.models import Candle, ClusterSegment, FundingRate, Interval, OpenInterest, Symbol
 from feature.controllers import cvd_controller, refresh_controller
+from feature.controllers.cluster_identifier import ClusterIdentifierController
 
 _DEFAULT_LIMIT = 500
 # CVD lookback in days — matches `feature.controllers.refresh.LOOKBACK_DAYS`
@@ -141,6 +143,88 @@ def cvd_api(request: HttpRequest, symbol: str, interval: str) -> JsonResponse:
         return cvd_payload(symbol, interval, series)
 
     return _run(_do)
+
+
+@require_GET
+def clusters_api(request: HttpRequest, symbol: str) -> JsonResponse:
+    """Return persisted §5 cluster segments for `symbol`, optionally
+    merged across a chosen subset of the supported lookback windows.
+
+    Pure read: returns whatever the most recent Refresh wrote into
+    `ClusterSegment` for the selected `(symbol, lookback_hours)`
+    scopes. The query string `?windows=24,72,168` (comma-separated)
+    picks the subset; each token must be a member of
+    `ClusterIdentifierController.SUPPORTED_LOOKBACKS`. Default = all
+    three. A single window returns its rows as-is; multiple windows
+    are merged at the serializer layer via the §5.4 sum-of-strengths
+    rule per `(price_band, side)` — the §12.3 multi-resolution
+    confluence boost.
+
+    Empty list when the symbol has never been refreshed (or no
+    significant accumulation hours qualified inside the chosen
+    windows). Single indexed range scan via
+    `cluster_segment_lookup_idx`. Validation errors (empty subset,
+    unsupported window) → HTTP 400 via `_run`.
+    """
+
+    def _do() -> dict:
+        windows = _parse_windows(request.GET.get("windows"))
+        rows = (
+            ClusterSegment.objects.filter(
+                symbol=symbol,
+                lookback_hours__in=windows,
+            )
+            .order_by("start_time")
+            .values(
+                "side",
+                "price_low",
+                "price_high",
+                "price",
+                "start_time",
+                "end_time",
+                "strength",
+                "notional",
+                "long_bias",
+                "source_open_time",
+                "generated_at",
+                "lookback_hours",
+            )
+        )
+        return cluster_payload(symbol, rows, selected_windows=windows)
+
+    return _run(_do)
+
+
+def _parse_windows(raw: str | None) -> list[int]:
+    """Parse `?windows=24,72,168` → sorted unique list of supported lookbacks.
+
+    Default (None or empty string) = the full
+    `SUPPORTED_LOOKBACKS` tuple. Anything that is non-empty after
+    stripping must parse to an int that is itself a member of
+    `SUPPORTED_LOOKBACKS` — anything else raises `ValueError`, which
+    `_run` turns into HTTP 400. Both the empty-after-strip case
+    (`?windows=`) and unknown windows (`?windows=48`) are rejected;
+    the JS guards against the same conditions client-side, this is
+    belt-and-braces.
+    """
+    supported = ClusterIdentifierController.SUPPORTED_LOOKBACKS
+    if raw is None or raw == "":
+        return list(supported)
+    out: list[int] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            v = int(token)
+        except ValueError as exc:
+            raise ValueError(f"windows token must be int (got {token!r})") from exc
+        if v not in supported:
+            raise ValueError(f"windows token must be one of {list(supported)} (got {v})")
+        out.append(v)
+    if not out:
+        raise ValueError(f"windows must be a non-empty subset of {list(supported)}")
+    return sorted(set(out))
 
 
 # ---- shared error envelope -------------------------------------------------

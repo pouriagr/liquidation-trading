@@ -58,6 +58,70 @@
                 {% endfor %}
             </div>
 
+            {% comment %}
+            Overlay section — independent from the indicator radio set
+            because cluster bands are painted on the *main* candle pane
+            (via a Lightweight Charts series primitive — see
+            home.js's `ClusterBandPrimitive`), not in the sub-pane.
+            Toggling here doesn't replace the active indicator; the
+            two are orthogonal.
+            {% endcomment %}
+            <div id="overlays" class="sidebar-section sidebar-section--bottom" aria-label="Overlay">
+                <div class="sidebar-heading">Overlay</div>
+                <label class="radio-pill">
+                    <input type="checkbox" id="clusters-toggle"> Clusters
+                </label>
+                {% comment %}
+                Lookback-window selector — 24h / 72h / 168h, multi-
+                select. The user picks any non-empty subset and the
+                GET endpoint aggregates the selected windows server-
+                side (sum-of-strengths per band, §12.3 multi-resolution
+                confluence as §5.4 sum-of-contributions along the
+                window axis). Default = all three. JS rejects the last
+                toggle-off so the set can never be empty; the server
+                also returns HTTP 400 on `?windows=` regardless.
+                {% endcomment %}
+                <div class="overlay-control overlay-control--pills"
+                     role="group" aria-label="Cluster lookback windows">
+                    <span class="overlay-control-label">Lookback</span>
+                    <div class="overlay-pill-group" id="clusters-windows">
+                        <button type="button" class="pill is-active"
+                                data-lookback="24"  aria-pressed="true"
+                                disabled>24h</button>
+                        <button type="button" class="pill is-active"
+                                data-lookback="72"  aria-pressed="true"
+                                disabled>72h</button>
+                        <button type="button" class="pill is-active"
+                                data-lookback="168" aria-pressed="true"
+                                disabled>168h</button>
+                    </div>
+                </div>
+                {% comment %}
+                Strength filter — keeps the top X% of segments by raw
+                `strength` score. Percentile-based so the slider's
+                semantics survive a symbol switch (a linear strength
+                slider would shift its useful range with each pair's
+                absolute notional). 100% = show everything. The
+                viewport-local normalisation in `ClusterBandPrimitive._paint`
+                makes the slider invariant to the absolute strength
+                scale, so the multi-window sum-of-strengths boost
+                doesn't break it.
+                {% endcomment %}
+                <label class="overlay-control" for="clusters-threshold">
+                    <span class="overlay-control-label">
+                        Strength
+                        <span id="clusters-threshold-value">top 20%</span>
+                    </span>
+                    <input type="range" id="clusters-threshold"
+                           min="5" max="100" step="5" value="20" disabled>
+                </label>
+                <div id="clusters-legend" class="overlay-legend" aria-hidden="true">
+                    <span class="overlay-legend-label">weak</span>
+                    <span class="overlay-legend-bar"></span>
+                    <span class="overlay-legend-label">strong</span>
+                </div>
+            </div>
+
             <div id="indicators" class="sidebar-section sidebar-section--bottom" aria-label="Indicator">
                 <div class="sidebar-heading">Indicator</div>
                 <label class="radio-pill"><input type="radio" name="indicator" value="" checked> None</label>
@@ -95,7 +159,12 @@
             // so the JS helper can substitute uniformly.
             oi:      "{% url 'chart:oi'      symbol='__SYM__' period='__INT__' %}",
             funding: "{% url 'chart:funding' symbol='__SYM__' %}",
-            cvd:     "{% url 'chart:cvd'     symbol='__SYM__' interval='__INT__' %}"
+            cvd:     "{% url 'chart:cvd'     symbol='__SYM__' interval='__INT__' %}",
+            // Cluster heatmap — POST-less GET. No `__INT__`: there's
+            // no interval. home.js appends `?windows=24,72,168` (a
+            // comma-separated subset of the supported lookbacks)
+            // to drive multi-window aggregation server-side.
+            clusters: "{% url 'chart:clusters' symbol='__SYM__' %}"
         };
     </script>
 </body>

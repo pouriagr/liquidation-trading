@@ -256,6 +256,90 @@ body {
     margin-right: 8px;
 }
 
+/* Overlay controls — the cluster lookback select sits in the same
+   sidebar block as the toggle. Use a row layout so the label and
+   the select read as one control, matching the radio-pill rhythm. */
+.overlay-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    color: #b2b5be;
+}
+
+.overlay-control-label {
+    font-size: 12px;
+}
+
+.overlay-control select {
+    appearance: none;
+    background: #131722;
+    color: #d1d4dc;
+    border: 1px solid #2a2e39;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.overlay-control select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Multi-select pill group for the lookback windows (24h / 72h / 168h).
+   Sits inside an `.overlay-control--pills` shell so the label can
+   stack above the pill row rather than sit alongside a wide select. */
+.overlay-control--pills {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.overlay-pill-group {
+    display: flex;
+    gap: 4px;
+}
+
+.overlay-pill-group .pill {
+    flex: 1;
+    text-align: center;
+    padding: 4px 0;
+    font-size: 12px;
+    border: 1px solid #2a2e39;
+    background: #131722;
+    color: #d1d4dc;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.overlay-pill-group .pill.is-active {
+    background: #2962ff;
+    color: #fff;
+    border-color: #2962ff;
+}
+
+.overlay-pill-group .pill:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Brief red flash when the user tries to toggle off the last
+   remaining pill. Communicates "non-empty subset required" without a
+   modal or status message. */
+.overlay-pill-group .pill.pill--reject {
+    animation: pill-reject 0.24s ease-out;
+}
+
+@keyframes pill-reject {
+    50% {
+        background: #ef5350;
+        border-color: #ef5350;
+        color: #fff;
+    }
+}
+
 /* Right-click context menu for the chart. Position is set inline by
    home.js (showMenu); we just hide it here and style the open state. */
 .context-menu {
@@ -291,4 +375,51 @@ body {
 
 .context-menu .menu-item:hover {
     background: #2a2e39;
+}
+
+/* Strength slider for the cluster overlay. The accent-color is what the
+   native range thumb/track picks up across modern browsers — matches the
+   blue used on the active-pill so the overlay panel reads consistently.
+   Width is fixed so the percentage label has a stable column to its
+   left and the slider doesn't push other controls around. */
+.overlay-control input[type="range"] {
+    flex: 0 0 90px;
+    accent-color: #2962ff;
+    cursor: pointer;
+}
+
+.overlay-control input[type="range"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Strength-to-colour legend. The bar's gradient is the CSS mirror of the
+   `CLUSTER_RAMP` constant in home.js — five stops, sRGB-interpolated,
+   purple → blue → cyan → yellow → red. Keep them in lockstep when
+   tuning either side; the legend exists so the user can read a band's
+   colour without consulting docs. */
+.overlay-legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+}
+
+.overlay-legend-bar {
+    flex: 1 1 auto;
+    height: 8px;
+    border-radius: 2px;
+    background: linear-gradient(
+        to right,
+        #3b0a45 0%,
+        #2b4f8a 25%,
+        #2bb4c4 50%,
+        #f7c548 75%,
+        #ef3b3b 100%
+    );
+}
+
+.overlay-legend-label {
+    font-size: 11px;
+    color: #787b86;
 }

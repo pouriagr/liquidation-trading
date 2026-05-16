@@ -8,11 +8,16 @@ home page (HTML) plus a small set of JSON APIs the home page's JS calls:
   * `chart:oi`       — Open Interest series for the indicator sub-pane.
   * `chart:funding`  — funding-rate series for the indicator sub-pane.
   * `chart:cvd`      — windowed CVD series for the indicator sub-pane.
+  * `chart:clusters` — §5 liquidation cluster map (zones + heatmap),
+                       overlaid on the candle pane rather than the
+                       indicator sub-pane. Takes only `symbol`; the
+                       lookback comes through as a `?lookback_days=`
+                       query param so the path stays cacheable.
 
-The three indicator endpoints are intentionally split by data type so
-each URL carries only the parameters that source needs (OI has a
-period, funding has no period, CVD has a candle interval); a unified
-endpoint would force a least-common-denominator signature.
+The indicator endpoints are intentionally split by data type so each
+URL carries only the parameters that source needs (OI has a period,
+funding has no period, CVD has a candle interval); a unified endpoint
+would force a least-common-denominator signature.
 """
 
 from django.urls import path
@@ -36,4 +41,5 @@ urlpatterns = [
     path("api/oi/<str:symbol>/<str:period>/", views.oi_api, name="oi"),
     path("api/funding/<str:symbol>/", views.funding_api, name="funding"),
     path("api/cvd/<str:symbol>/<str:interval>/", views.cvd_api, name="cvd"),
+    path("api/clusters/<str:symbol>/", views.clusters_api, name="clusters"),
 ]

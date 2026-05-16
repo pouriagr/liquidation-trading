@@ -21,6 +21,18 @@ pandas = "^3.0.2"
 pre-commit = "^4.6.0"
 black = "^26.3.1"
 ruff = "^0.15.12"
+pytest = "^8.3.0"
+pytest-django = "^4.9.0"
+
+[tool.pytest.ini_options]
+# The cluster math module (`feature/services/clustering.py`) is
+# intentionally Django-free, so the existing tests run without bootstrapping
+# the ORM. Setting DJANGO_SETTINGS_MODULE here keeps future controller-level
+# tests one decorator away — pytest-django will lazy-bootstrap Django on
+# tests marked `@pytest.mark.django_db` without disturbing the pure tests.
+DJANGO_SETTINGS_MODULE = "core.settings"
+python_files = ["test_*.py"]
+testpaths = ["feature/tests", "chart/tests"]
 
 [tool.black]
 line-length = 100

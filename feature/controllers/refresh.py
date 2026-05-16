@@ -62,6 +62,7 @@ from data.controllers import (
     binance_open_interest_controller,
 )
 from data.models import Candle, FundingRate, OpenInterest, Symbol
+from feature.controllers.cluster_identifier import ClusterIdentifierController
 from feature.controllers.oi_aggregator import OIAggregatorController
 
 logger = logging.getLogger(__name__)
@@ -134,11 +135,16 @@ class RefreshController:
 
     ALLOWED_SYMBOLS = frozenset(Symbol.values)
 
-    def __init__(self, oi_aggregator: OIAggregatorController | None = None) -> None:
-        # Injected so a test can substitute a stub aggregator without
-        # patching at the import level. Defaults to a real one because
-        # production callers don't need to know it exists.
+    def __init__(
+        self,
+        oi_aggregator: OIAggregatorController | None = None,
+        cluster_identifier: ClusterIdentifierController | None = None,
+    ) -> None:
+        # Both dependencies are DI'd so tests can substitute stubs
+        # without patching at the import level. Defaults are real
+        # because production callers don't need to know they exist.
         self._oi_aggregator = oi_aggregator or OIAggregatorController()
+        self._cluster_identifier = cluster_identifier or ClusterIdentifierController()
 
     # ---- public entry point -------------------------------------------------
     def refresh(self, symbol: str, interval: str) -> RefreshResult:
@@ -162,11 +168,18 @@ class RefreshController:
 
         result.sources.append(self._refresh_funding(symbol))
 
-        # Derive 1h OI from the 5m rows we just (re)freshed. Done last so
+        # Derive 1h OI from the 5m rows we just (re)freshed. Done so
         # any per-source failure on the 5m OI step shows up explicitly
         # — and the derived row makes it clear when the input wasn't
         # actually refreshed (zero received → zero created/updated).
         result.sources.append(self._derive_oi_1h(symbol))
+
+        # Recompute and persist §5 liquidation clusters last — depends
+        # on the derived 1h OI plus the freshly-ingested 5m candles
+        # for sweep detection. Per-source error capture in
+        # `_refresh_clusters` keeps a broken cluster step from masking
+        # otherwise-successful candles/OI/funding.
+        result.sources.append(self._refresh_clusters(symbol))
 
         ok = sum(1 for s in result.sources if s.error is None)
         failed = len(result.sources) - ok
@@ -410,6 +423,62 @@ class RefreshController:
                 updated=0,
                 error=f"{type(exc).__name__}: {exc}",
             )
+
+    def _refresh_clusters(self, symbol: str) -> SourceResult:
+        """Recompute and persist §5 liquidation clusters for `symbol`,
+        once per member of `ClusterIdentifierController.SUPPORTED_LOOKBACKS`.
+
+        Each call to `compute_and_persist` does a transactional
+        delete-then-bulk_create scoped to `(symbol, lookback_hours)` —
+        so the three windows don't contend, and a failure on one
+        window leaves the others untouched. The reported `created`
+        count is the sum across windows; the first error (if any) is
+        surfaced on the consolidated `SourceResult`. Idempotent —
+        replays of the same refresh produce the same persisted set.
+        """
+        label = "clusters"
+        total_created = 0
+        windows: list[int] = []
+        first_error: str | None = None
+        logger.info(
+            "refresh source start: %s windows=%s",
+            label,
+            list(ClusterIdentifierController.SUPPORTED_LOOKBACKS),
+        )
+        for lb in ClusterIdentifierController.SUPPORTED_LOOKBACKS:
+            try:
+                summary = self._cluster_identifier.compute_and_persist(
+                    symbol,
+                    lookback_hours=lb,
+                )
+                total_created += summary["created"]
+                windows.append(lb)
+                logger.info(
+                    "refresh source: %s lb=%dh deleted=%d created=%d anchor=%s",
+                    label,
+                    lb,
+                    summary["deleted"],
+                    summary["created"],
+                    summary["anchor_price"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("refresh: %s lb=%dh failed", label, lb)
+                if first_error is None:
+                    first_error = f"lb={lb}h {type(exc).__name__}: {exc}"
+        logger.info(
+            "refresh source done: %s windows=%s total_created=%d",
+            label,
+            windows,
+            total_created,
+        )
+        return SourceResult(
+            label=label,
+            backfilled=False,  # full replace; not a fetch
+            received=0,
+            created=total_created,
+            updated=0,
+            error=first_error,
+        )
 
     # ---- internals — helpers -----------------------------------------------
     def _validate(self, symbol: str, interval: str) -> tuple[str, str]:
